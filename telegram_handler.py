@@ -37,13 +37,13 @@ class TelegramHandler:
             return
         
         hoje = datetime.now().date()
-        menagem = "📅 PRÓXIMAS CONTAS (3 DIAS):\n\n"
-        
+        mensagem = "📅 PRÓXIMAS CONTAS (3 DIAS):\n\n"
+
         for conta in contas[:10]:
             try:
                 vencimento = datetime.strptime(conta.vencimento, '%d/%m/%Y').date()
                 dias_faltam = (vencimento - hoje).days
-                
+
                 if dias_faltam <= 3:
                     emoji = "🔴" if dias_faltam == 0 else "🟡" if dias_faltam <= 1 else "🟠"
                     mensagem += f"{emoji} {conta.vencimento}\n"
@@ -52,7 +52,7 @@ class TelegramHandler:
                     mensagem += f"  ID: #{conta.id}\n\n"
             except:
                 pass
-        
+
         await update.message.reply_text(mensagem if len(mensagem) > 30 else "Nenhuma conta próxima")
     
     async def todas(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -202,21 +202,52 @@ Status: Operacional ✅
         await update.message.reply_text(texto)
     
     async def mensagem_texto(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        """Processa mensagens de texto com agente"""
+        """Processa mensagens de texto com agente IA e salva no banco"""
         texto = update.message.text
-        
-        # Se parece com uma conta, processa
-        if any(palavra in texto.lower() for palavra in ['r$', 'vence', 'pagamento', 'boleto', 'pix', 'conta']):
+
+        await update.message.reply_text("🤔 Analisando com IA...")
+
+        try:
             resposta = self.agente.processar_entrada(f"Mensagem do usuário: {texto}")
             dados = self.agente.extrair_json_resposta(resposta)
-            
-            if dados:
-                await update.message.reply_text(f"✅ Processado: {dados.get('fornecedor', 'Conta')}")
-            else:
-                await update.message.reply_text("Não consegui identificar a conta. Tente com mais detalhes.")
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erro ao processar com IA: {e}")
+            return
+
+        if dados and dados.get('tipo_resposta') == 'conta_identificada':
+            try:
+                conta_id = self.db.adicionar_conta(
+                    vencimento=dados.get('vencimento'),
+                    fornecedor=dados.get('fornecedor'),
+                    valor=dados.get('valor'),
+                    categoria=dados.get('categoria'),
+                    forma_pagamento=dados.get('forma_pagamento'),
+                    codigo_pix=dados.get('dados_pagamento'),
+                    observacoes=dados.get('observacoes', '')
+                )
+                resposta_msg = (
+                    f"✅ Conta registrada! ID #{conta_id}\n\n"
+                    f"👤 {dados.get('fornecedor', '-')}\n"
+                    f"💰 R$ {float(dados.get('valor', 0)):.2f}\n"
+                    f"📅 Vencimento: {dados.get('vencimento', '-')}\n"
+                    f"💳 {dados.get('forma_pagamento', '-')}\n"
+                    f"📁 {dados.get('categoria', '-')}\n"
+                )
+                if dados.get('dados_pagamento'):
+                    resposta_msg += f"🔑 {dados.get('dados_pagamento')}\n"
+                if dados.get('observacoes'):
+                    resposta_msg += f"📝 {dados.get('observacoes')}\n"
+                await update.message.reply_text(resposta_msg)
+            except Exception as e:
+                await update.message.reply_text(f"❌ Erro ao salvar no banco: {e}")
         else:
             await update.message.reply_text(
-                "Não entendi. Use /ajuda para ver comandos disponíveis"
+                "Não consegui identificar uma conta nos dados informados.\n\n"
+                "Inclua:\n"
+                "• Fornecedor/nome\n"
+                "• Valor (ex: R$ 1.500,00)\n"
+                "• Vencimento (ex: 30/05/2026)\n"
+                "• Forma de pagamento (PIX, boleto, etc.)"
             )
     
     async def enviar_alerta(self, mensagem: str):

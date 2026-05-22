@@ -17,7 +17,8 @@ logger = logging.getLogger(__name__)
 class Agendador:
     def __init__(self):
         self.scheduler = BackgroundScheduler()
-        self.db = BancoDados(db_type='sqlite', db_file='contas.db')
+        db_file = os.getenv('DATABASE_FILE', 'contas.db')
+        self.db = BancoDados(db_type='sqlite', db_file=db_file)
         self.monitor = MonitorGmail(self.db)
         self.gerador_alertas = GeradorAlertas(self.db)
         self.timezone = pytz.timezone(os.getenv('ALERTA_TIMEZONE', 'America/Sao_Paulo'))

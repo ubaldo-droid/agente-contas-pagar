@@ -101,25 +101,25 @@ class AgenteCompleto:
         thread.start()
         logger.info("✅ Monitoramento Gmail em background")
     
-    def rodar_telegram_em_thread(self):
-        """Roda Telegram em thread separada"""
-        def bot():
-            logger.info("💬 Thread Telegram iniciada")
+    def rodar_agendador_em_thread(self):
+        """Roda Agendador em thread separada"""
+        def agendador():
+            logger.info("📅 Thread Agendador iniciada")
             try:
-                self.telegram.rodar()
+                self.agendador.agendar()
             except Exception as e:
-                logger.error(f"❌ Erro em thread Telegram: {e}")
-        
-        thread = threading.Thread(target=bot, daemon=True)
+                logger.error(f"❌ Erro em thread Agendador: {e}")
+
+        thread = threading.Thread(target=agendador, daemon=True)
         thread.start()
-        logger.info("✅ Telegram rodando em background")
-    
+        logger.info("✅ Agendador rodando em background")
+
     def rodar_tudo(self):
         """Inicia todos os componentes"""
         logger.info("\n" + "=" * 60)
         logger.info("🚀 INICIANDO TODOS OS COMPONENTES")
         logger.info("=" * 60 + "\n")
-        
+
         print("\n" + "=" * 60)
         print("🤖 AGENTE DE CONTAS A PAGAR")
         print("=" * 60)
@@ -134,19 +134,20 @@ class AgenteCompleto:
         print("  2. Use /ajuda no Telegram para comandos")
         print("  3. Digite /status para verificar tudo")
         print("\n" + "=" * 60 + "\n")
-        
+
         # Rodar Gmail em background
         self.rodar_gmail_em_thread()
-        
-        # Rodar Telegram em foreground (bloqueia)
-        self.rodar_telegram_em_thread()
-        
-        # Manter aplicação rodando
+
+        # Rodar Agendador em background
+        self.rodar_agendador_em_thread()
+
+        # Rodar Telegram no thread principal
+        # python-telegram-bot v20+ requer event loop do asyncio — funciona
+        # corretamente apenas no thread principal
+        logger.info("💬 Iniciando Telegram Bot no thread principal...")
         try:
-            import time
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
+            self.telegram.rodar()
+        except (KeyboardInterrupt, SystemExit):
             logger.info("\n⏹️ Agente parado pelo usuário")
             print("\n⏹️ Agente finalizado. Até logo!")
             sys.exit(0)

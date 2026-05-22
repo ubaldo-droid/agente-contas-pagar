@@ -1,0 +1,10 @@
+.env
+chaves.txt
+token.pickle
+*.db
+venv/
+__pycache__/
+*.pyc
+*.pyo
+agente.log
+data/

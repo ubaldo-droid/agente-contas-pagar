@@ -19,7 +19,7 @@ import threading
 from datetime import datetime
 
 # Carrega variáveis de ambiente
-load_dotenv()
+load_dotenv(override=True)
 
 # Configurar logging
 logging.basicConfig(
@@ -42,7 +42,9 @@ class AgenteCompleto:
         self.validar_configuracao()
         
         # Inicializar componentes
-        self.db = BancoDados(db_type='sqlite', db_file='contas.db')
+        db_file = os.getenv('DATABASE_FILE', 'contas.db')
+        os.makedirs(os.path.dirname(db_file), exist_ok=True) if os.path.dirname(db_file) else None
+        self.db = BancoDados(db_type='sqlite', db_file=db_file)
         logger.info("✅ Banco de dados pronto")
         
         self.monitor_gmail = MonitorGmail(self.db)
@@ -153,14 +155,9 @@ def main():
     """Função principal"""
     try:
         # Verificar se credentials.json existe
-        if not os.path.exists('credentials.json'):
-            logger.warning("⚠️ credentials.json não encontrado")
-            logger.warning("Para usar Gmail, faça download em:")
-            logger.warning("  Google Cloud Console → APIs → Gmail → OAuth 2.0")
-            logger.warning("  Salve como: credentials.json")
-            response = input("\nContinuar sem Gmail? (s/n): ").lower()
-            if response != 's':
-                sys.exit(1)
+        creds_file = os.getenv('GMAIL_CREDENTIALS_FILE', 'credentials.json')
+        if not os.path.exists(creds_file):
+            logger.warning("⚠️ credentials.json não encontrado — Gmail desativado")
         
         # Criar agente
         agente = AgenteCompleto()

@@ -1,0 +1,54 @@
+services:
+  - type: worker
+    name: agente-contas-pagar
+    runtime: docker
+    plan: starter
+    disk:
+      name: dados
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GMAIL_CREDENTIALS_FILE
+        value: credentials.json
+      - key: GMAIL_MONITORED_ADDRESS
+        value: ubaldostarlinkmini@gmail.com
+      - key: GMAIL_LABEL
+        value: ContasAPagar
+      - key: GMAIL_TOKEN_B64
+        sync: false
+      - key: EMAIL_SENDER
+        value: ubaldostarlinkmini@gmail.com
+      - key: EMAIL_SENDER_PASSWORD
+        sync: false
+      - key: EMAIL_RECIPIENT
+        value: ubaldo@juvenizjr.com.br
+      - key: SMTP_SERVER
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        value: "7638406751"
+      - key: DATABASE_TYPE
+        value: sqlite
+      - key: DATABASE_FILE
+        value: /app/data/contas.db
+      - key: ALERTA_HORA
+        value: "8"
+      - key: ALERTA_MINUTO
+        value: "0"
+      - key: ALERTA_TIMEZONE
+        value: America/Sao_Paulo
+      - key: ALERTA_DIARIO
+        value: "True"
+      - key: COMPROVANTES_STORAGE_LOCAL
+        value: /app/data/comprovantes
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "False"
+      - key: LOG_LEVEL
+        value: INFO

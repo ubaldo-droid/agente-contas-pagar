@@ -4,7 +4,7 @@ import base64
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
-from google.api_python_client import discovery
+from googleapiclient import discovery
 from agente import AgenteContasPagar
 from database import BancoDados
 import json
@@ -19,26 +19,31 @@ class MonitorGmail:
         self.label_monitorado = os.getenv('GMAIL_LABEL', 'ContasAPagar')
     
     def autenticar_gmail(self):
-        """Autentica com Gmail"""
+        """Autentica com Gmail. Em produção usa GMAIL_TOKEN_B64; localmente usa token.pickle."""
         creds = None
-        
-        if os.path.exists('token.pickle'):
-            with open('token.pickle', 'rb') as token:
-                creds = pickle.load(token)
-        
+        token_b64 = os.getenv('GMAIL_TOKEN_B64')
+
+        if token_b64:
+            creds = pickle.loads(base64.b64decode(token_b64))
+        elif os.path.exists('token.pickle'):
+            with open('token.pickle', 'rb') as f:
+                creds = pickle.load(f)
+
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
+                if not token_b64:
+                    with open('token.pickle', 'wb') as f:
+                        pickle.dump(creds, f)
             else:
                 flow = InstalledAppFlow.from_client_secrets_file(
-                    os.getenv('GMAIL_CREDENTIALS_FILE', 'credentials.json'), 
+                    os.getenv('GMAIL_CREDENTIALS_FILE', 'credentials.json'),
                     self.SCOPES
                 )
                 creds = flow.run_local_server(port=0)
-            
-            with open('token.pickle', 'wb') as token:
-                pickle.dump(creds, token)
-        
+                with open('token.pickle', 'wb') as f:
+                    pickle.dump(creds, f)
+
         return discovery.build('gmail', 'v1', credentials=creds)
     
     def obter_emails_nao_lidos(self, max_resultados=5):

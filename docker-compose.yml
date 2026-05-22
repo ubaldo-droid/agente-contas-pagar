@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  agente:
+    build: .
+    container_name: agente-contas-pagar
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GMAIL_CREDENTIALS_FILE=${GMAIL_CREDENTIALS_FILE}
+      - GMAIL_MONITORED_ADDRESS=${GMAIL_MONITORED_ADDRESS}
+      - EMAIL_SENDER=${EMAIL_SENDER}
+      - EMAIL_SENDER_PASSWORD=${EMAIL_SENDER_PASSWORD}
+      - EMAIL_RECIPIENT=${EMAIL_RECIPIENT}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID}
+      - DATABASE_TYPE=${DATABASE_TYPE}
+      - DATABASE_FILE=${DATABASE_FILE}
+      - COMPROVANTES_STORAGE_LOCAL=${COMPROVANTES_STORAGE_LOCAL}
+    volumes:
+      - ./data:/app/data
+      - ./credentials.json:/app/credentials.json:ro
+      - ./contas.db:/app/contas.db
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  data:

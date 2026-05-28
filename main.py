@@ -19,7 +19,7 @@ import threading
 from datetime import datetime
 
 # Carrega variáveis de ambiente
-load_dotenv(override=True)
+load_dotenv()
 
 # Configurar logging
 logging.basicConfig(

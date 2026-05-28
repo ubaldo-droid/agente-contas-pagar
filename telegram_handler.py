@@ -3,6 +3,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from database import BancoDados
 from agente import AgenteContasPagar
+from anthropic import AuthenticationError
 from datetime import datetime, timedelta
 import json
 
@@ -210,6 +211,12 @@ Status: Operacional ✅
         try:
             resposta = self.agente.processar_entrada(f"Mensagem do usuário: {texto}")
             dados = self.agente.extrair_json_resposta(resposta)
+        except AuthenticationError:
+            await update.message.reply_text(
+                "❌ Chave da API Anthropic inválida ou expirada.\n\n"
+                "Atualize a variável ANTHROPIC_API_KEY no arquivo .env com uma chave válida."
+            )
+            return
         except Exception as e:
             await update.message.reply_text(f"❌ Erro ao processar com IA: {e}")
             return

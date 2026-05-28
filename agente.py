@@ -1,14 +1,17 @@
 import os
-from anthropic import Anthropic
+from anthropic import Anthropic, AuthenticationError
 import json
 from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class AgenteContasPagar:
     def __init__(self):
         api_key = os.getenv('ANTHROPIC_API_KEY')
         if not api_key:
             raise ValueError("ANTHROPIC_API_KEY não configurada no .env")
-        
+
         self.cliente = Anthropic(api_key=api_key)
         self.historico = []
         self.sistema_prompt = """
@@ -108,7 +111,7 @@ CONTEXTO DO USUÁRIO:
         })
         
         resposta = self.cliente.messages.create(
-            model="claude-opus-4-20250514",
+            model="claude-sonnet-4-6",
             max_tokens=2000,
             system=self.sistema_prompt,
             messages=self.historico

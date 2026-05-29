@@ -125,6 +125,66 @@ CONTEXTO DO USUÁRIO:
         
         return conteudo_resposta
 
+    def processar_arquivo(self, dados_binarios: bytes, media_type: str, nome_arquivo: str, legenda: str = ''):
+        """Processa imagem ou PDF com visão do Claude para extrair dados de boletos e contas"""
+        import base64
+
+        tipos_imagem = {'image/jpeg', 'image/png', 'image/gif', 'image/webp'}
+        conteudo = []
+
+        if media_type == 'application/pdf':
+            try:
+                from pdf2image import convert_from_bytes
+                from io import BytesIO
+                paginas = convert_from_bytes(dados_binarios, first_page=1, last_page=3, dpi=150)
+                if not paginas:
+                    raise ValueError("PDF vazio ou ilegível")
+                for pagina in paginas:
+                    buf = BytesIO()
+                    pagina.save(buf, format='JPEG', quality=85)
+                    conteudo.append({
+                        "type": "image",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "image/jpeg",
+                            "data": base64.standard_b64encode(buf.getvalue()).decode()
+                        }
+                    })
+            except ImportError:
+                raise ValueError("Dependência pdf2image não disponível. Verifique se poppler-utils está instalado.")
+        elif media_type in tipos_imagem:
+            conteudo.append({
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": base64.standard_b64encode(dados_binarios).decode()
+                }
+            })
+        else:
+            raise ValueError(f"Formato não suportado: {media_type}. Use PDF, JPEG, PNG ou WebP.")
+
+        texto_prompt = f"Arquivo recebido: {nome_arquivo}"
+        if legenda:
+            texto_prompt += f"\nObservação do usuário: {legenda}"
+        texto_prompt += (
+            "\n\nAnalise este documento (boleto, fatura, comprovante ou imagem de conta a pagar). "
+            "Extraia todos os dados disponíveis: código de barras, valor, vencimento, beneficiário, "
+            "forma de pagamento, e responda com JSON estruturado conforme seu formato padrão."
+        )
+        conteudo.append({"type": "text", "text": texto_prompt})
+
+        resposta = self.cliente.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=2000,
+            system=self.sistema_prompt,
+            messages=[{"role": "user", "content": conteudo}]
+        )
+
+        conteudo_resposta = resposta.content[0].text
+        self.historico.append({"role": "assistant", "content": conteudo_resposta})
+        return conteudo_resposta
+
     def extrair_json_resposta(self, resposta: str):
         """Extrai JSON da resposta do agente"""
         try:

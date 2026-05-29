@@ -212,12 +212,60 @@ Status: Operacional ✅
 """
         await update.message.reply_text(texto)
     
+    async def _salvar_conta_ou_responder(self, update: Update, dados, resposta_ia: str):
+        """Salva conta identificada no banco ou informa o usuário conforme resultado da IA"""
+        if dados and dados.get('tipo_resposta') == 'conta_identificada':
+            try:
+                conta_id = self.db.adicionar_conta(
+                    vencimento=dados.get('vencimento'),
+                    fornecedor=dados.get('fornecedor'),
+                    valor=dados.get('valor'),
+                    categoria=dados.get('categoria'),
+                    forma_pagamento=dados.get('forma_pagamento'),
+                    codigo_pix=dados.get('dados_pagamento'),
+                    observacoes=dados.get('observacoes', '')
+                )
+                msg = (
+                    f"✅ Conta registrada! ID #{conta_id}\n\n"
+                    f"👤 {dados.get('fornecedor', '-')}\n"
+                    f"💰 R$ {float(dados.get('valor', 0)):.2f}\n"
+                    f"📅 Vencimento: {dados.get('vencimento', '-')}\n"
+                    f"💳 {dados.get('forma_pagamento', '-')}\n"
+                    f"📁 {dados.get('categoria', '-')}\n"
+                )
+                if dados.get('dados_pagamento'):
+                    msg += f"🔑 {dados.get('dados_pagamento')}\n"
+                if dados.get('observacoes'):
+                    msg += f"📝 {dados.get('observacoes')}\n"
+                await update.message.reply_text(msg)
+            except Exception as e:
+                await update.message.reply_text(f"❌ Erro ao salvar no banco: {e}")
+        elif dados and dados.get('tipo_resposta') == 'comprovante_identificado':
+            ext = dados.get('dados_extraidos', {})
+            msg = (
+                f"🧾 Comprovante identificado:\n\n"
+                f"💰 Valor: R$ {ext.get('valor', '-')}\n"
+                f"📅 Data: {ext.get('data', '-')}\n"
+                f"🏦 {ext.get('tipo_transacao', '-')} — {ext.get('instituicao', '-')}\n"
+                f"✅ Status: {ext.get('status', '-')}\n\n"
+                f"Use /paga <id> para marcar a conta correspondente como paga."
+            )
+            await update.message.reply_text(msg)
+        else:
+            await update.message.reply_text(
+                "🤔 Não consegui identificar uma conta nos dados informados.\n\n"
+                "Para texto, inclua:\n"
+                "• Fornecedor/nome\n"
+                "• Valor (ex: R$ 1.500,00)\n"
+                "• Vencimento (ex: 30/05/2026)\n"
+                "• Forma de pagamento (PIX, boleto, etc.)\n\n"
+                "Para arquivos, envie uma foto do boleto ou o PDF."
+            )
+
     async def mensagem_texto(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Processa mensagens de texto com agente IA e salva no banco"""
         texto = update.message.text
-
         await update.message.reply_text("🤔 Analisando com IA...")
-
         try:
             resposta = self.agente.processar_entrada(f"Mensagem do usuário: {texto}")
             dados = self.agente.extrair_json_resposta(resposta)
@@ -230,42 +278,56 @@ Status: Operacional ✅
         except Exception as e:
             await update.message.reply_text(f"❌ Erro ao processar com IA: {e}")
             return
+        await self._salvar_conta_ou_responder(update, dados, resposta)
 
-        if dados and dados.get('tipo_resposta') == 'conta_identificada':
-            try:
-                conta_id = self.db.adicionar_conta(
-                    vencimento=dados.get('vencimento'),
-                    fornecedor=dados.get('fornecedor'),
-                    valor=dados.get('valor'),
-                    categoria=dados.get('categoria'),
-                    forma_pagamento=dados.get('forma_pagamento'),
-                    codigo_pix=dados.get('dados_pagamento'),
-                    observacoes=dados.get('observacoes', '')
-                )
-                resposta_msg = (
-                    f"✅ Conta registrada! ID #{conta_id}\n\n"
-                    f"👤 {dados.get('fornecedor', '-')}\n"
-                    f"💰 R$ {float(dados.get('valor', 0)):.2f}\n"
-                    f"📅 Vencimento: {dados.get('vencimento', '-')}\n"
-                    f"💳 {dados.get('forma_pagamento', '-')}\n"
-                    f"📁 {dados.get('categoria', '-')}\n"
-                )
-                if dados.get('dados_pagamento'):
-                    resposta_msg += f"🔑 {dados.get('dados_pagamento')}\n"
-                if dados.get('observacoes'):
-                    resposta_msg += f"📝 {dados.get('observacoes')}\n"
-                await update.message.reply_text(resposta_msg)
-            except Exception as e:
-                await update.message.reply_text(f"❌ Erro ao salvar no banco: {e}")
-        else:
+    async def processar_foto(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Processa foto enviada (boleto, fatura, comprovante)"""
+        await update.message.reply_text("🔍 Analisando imagem com IA...")
+        photo = update.message.photo[-1]
+        legenda = update.message.caption or ''
+        try:
+            arquivo = await context.bot.get_file(photo.file_id)
+            dados_binarios = bytes(await arquivo.download_as_bytearray())
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erro ao baixar imagem: {e}")
+            return
+        await self._processar_arquivo_e_salvar(update, dados_binarios, 'image/jpeg', 'foto.jpg', legenda)
+
+    async def processar_documento(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Processa documento (PDF, imagem) enviado como arquivo"""
+        doc = update.message.document
+        mime_type = doc.mime_type or 'application/octet-stream'
+        nome = doc.file_name or 'arquivo'
+        legenda = update.message.caption or ''
+
+        tipos_suportados = {'application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
+        if mime_type not in tipos_suportados:
             await update.message.reply_text(
-                "Não consegui identificar uma conta nos dados informados.\n\n"
-                "Inclua:\n"
-                "• Fornecedor/nome\n"
-                "• Valor (ex: R$ 1.500,00)\n"
-                "• Vencimento (ex: 30/05/2026)\n"
-                "• Forma de pagamento (PIX, boleto, etc.)"
+                f"❌ Formato '{mime_type}' não suportado.\n\nEnvie PDF, JPEG, PNG ou WebP."
             )
+            return
+
+        await update.message.reply_text(f"🔍 Analisando {nome} com IA...")
+        try:
+            arquivo = await context.bot.get_file(doc.file_id)
+            dados_binarios = bytes(await arquivo.download_as_bytearray())
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erro ao baixar arquivo: {e}")
+            return
+        await self._processar_arquivo_e_salvar(update, dados_binarios, mime_type, nome, legenda)
+
+    async def _processar_arquivo_e_salvar(self, update, dados_binarios: bytes, mime_type: str, nome: str, legenda: str):
+        """Processa arquivo com visão da IA e salva resultado no banco"""
+        try:
+            resposta = self.agente.processar_arquivo(dados_binarios, mime_type, nome, legenda)
+            dados = self.agente.extrair_json_resposta(resposta)
+        except AuthenticationError:
+            await update.message.reply_text("❌ Chave da API Anthropic inválida ou expirada.")
+            return
+        except Exception as e:
+            await update.message.reply_text(f"❌ Erro ao processar arquivo: {e}")
+            return
+        await self._salvar_conta_ou_responder(update, dados, resposta)
     
     async def enviar_alerta(self, mensagem: str):
         """Envia alerta para o usuário via Telegram"""
@@ -294,7 +356,9 @@ Status: Operacional ✅
         self.application.add_handler(CommandHandler("ajuda", self.ajuda))
         self.application.add_handler(CommandHandler("status", self.status))
         
-        # Handler de mensagens de texto
+        # Handlers de mensagens
+        self.application.add_handler(MessageHandler(filters.PHOTO, self.processar_foto))
+        self.application.add_handler(MessageHandler(filters.Document.ALL, self.processar_documento))
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.mensagem_texto))
     
     def rodar(self):

@@ -3,6 +3,7 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from database import BancoDados
 from agente import AgenteContasPagar
+from email_alertas import GeradorAlertas
 from anthropic import AuthenticationError
 from datetime import datetime, timedelta
 import json
@@ -13,6 +14,7 @@ class TelegramHandler:
         self.chat_id = int(os.getenv('TELEGRAM_CHAT_ID', 0))
         self.db = database
         self.agente = AgenteContasPagar()
+        self.gerador_alertas = GeradorAlertas(database)
         self.application = None
     
     async def iniciar(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -149,6 +151,13 @@ class TelegramHandler:
         except ValueError:
             await update.message.reply_text("❌ ID inválido")
     
+    async def alerta(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Dispara alerta de contas a vencer manualmente"""
+        contas = self.gerador_alertas.obter_contas_proximos_dias(dias=3)
+        texto = self.gerador_alertas.gerar_alerta_texto(contas)
+        cabecalho = f"📅 CONTAS DOS PRÓXIMOS 3 DIAS ({datetime.now().strftime('%d/%m/%Y')}):\n\n"
+        await update.message.reply_text(cabecalho + texto)
+
     async def ajuda(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Mostra ajuda completa"""
         texto = """
@@ -158,6 +167,7 @@ class TelegramHandler:
 /proximas - Próximas 3 dias
 /todas - Todas pendentes
 /pagas - Contas já pagas
+/alerta - Alerta completo de vencimentos
 
 📊 RELATÓRIOS:
 /relatorio - Gastos por categoria
@@ -171,8 +181,8 @@ class TelegramHandler:
 /status - Status do agente
 
 💡 DICAS:
-- Use /proximas diariamente
-- Envie comprovantes por email para registrar pagamentos
+- Use /alerta a qualquer hora para ver contas dos próximos 3 dias
+- Envie texto aqui descrevendo a conta para cadastrá-la
 - Categorize bem para relatórios precisos
 """
         await update.message.reply_text(texto)
@@ -280,6 +290,7 @@ Status: Operacional ✅
         self.application.add_handler(CommandHandler("relatorio", self.relatorio))
         self.application.add_handler(CommandHandler("categorias", self.categorias))
         self.application.add_handler(CommandHandler("paga", self.paga))
+        self.application.add_handler(CommandHandler("alerta", self.alerta))
         self.application.add_handler(CommandHandler("ajuda", self.ajuda))
         self.application.add_handler(CommandHandler("status", self.status))
         

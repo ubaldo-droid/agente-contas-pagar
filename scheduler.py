@@ -33,10 +33,10 @@ class Agendador:
             logger.error(f"❌ Erro no monitoramento: {e}")
     
     def tarefa_alerta_diario(self):
-        """Executa alerta diário"""
+        """Executa alerta diário via email e Telegram"""
         try:
             logger.info("⏰ Enviando alerta diário...")
-            self.gerador_alertas.enviar_email_alerta()
+            self.gerador_alertas.enviar_alertas_diarios()
             logger.info("✅ Alerta enviado")
         except Exception as e:
             logger.error(f"❌ Erro ao enviar alerta: {e}")

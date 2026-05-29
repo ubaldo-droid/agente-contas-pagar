@@ -134,12 +134,21 @@ class BancoDados:
         print(f"✅ Comprovante {arquivo_nome} armazenado para conta #{conta_id}")
     
     def obter_proximas_contas(self, dias=3):
+        from datetime import date, timedelta
+        hoje = date.today()
+        limite = hoje + timedelta(days=dias)
         session = self.Session()
-        contas = session.query(Conta).filter(
-            Conta.status == 'Pendente'
-        ).all()
+        contas = session.query(Conta).filter(Conta.status == 'Pendente').all()
         session.close()
-        return contas
+        resultado = []
+        for c in contas:
+            try:
+                venc = datetime.strptime(c.vencimento, '%d/%m/%Y').date()
+                if hoje <= venc <= limite:
+                    resultado.append(c)
+            except Exception:
+                pass
+        return resultado
     
     def obter_contas_por_categoria(self, categoria):
         session = self.Session()

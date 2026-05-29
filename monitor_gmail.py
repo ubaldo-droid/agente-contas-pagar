@@ -46,19 +46,37 @@ class MonitorGmail:
 
         return discovery.build('gmail', 'v1', credentials=creds)
     
-    def obter_emails_nao_lidos(self, max_resultados=5):
-        """Busca emails não lidos"""
+    def obter_emails_nao_lidos(self, max_resultados=10):
+        """Busca emails não lidos: label monitorado + inbox recentes (últimas 24h)"""
+        ids_vistos = set()
+        mensagens = []
         try:
-            resultados = self.service.users().messages().list(
+            # Emails com o label específico (qualquer data)
+            r1 = self.service.users().messages().list(
                 userId='me',
                 q=f'label:{self.label_monitorado} is:unread',
                 maxResults=max_resultados
             ).execute()
-            
-            return resultados.get('messages', [])
+            for m in r1.get('messages', []):
+                if m['id'] not in ids_vistos:
+                    ids_vistos.add(m['id'])
+                    mensagens.append(m)
         except Exception as e:
-            print(f"❌ Erro ao buscar emails: {e}")
-            return []
+            print(f"⚠️ Erro ao buscar por label: {e}")
+        try:
+            # Emails não lidos no inbox das últimas 24h (captura emails sem label)
+            r2 = self.service.users().messages().list(
+                userId='me',
+                q='in:inbox is:unread newer_than:1d',
+                maxResults=max_resultados
+            ).execute()
+            for m in r2.get('messages', []):
+                if m['id'] not in ids_vistos:
+                    ids_vistos.add(m['id'])
+                    mensagens.append(m)
+        except Exception as e:
+            print(f"⚠️ Erro ao buscar inbox: {e}")
+        return mensagens
     
     def obter_corpo_email(self, mensagem_id):
         """Extrai o corpo e anexos do email"""

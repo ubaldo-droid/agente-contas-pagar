@@ -4,6 +4,7 @@ from email.mime.multipart import MIMEMultipart
 from datetime import datetime, timedelta
 from database import BancoDados
 import os
+import requests
 
 class GeradorAlertas:
     def __init__(self, database):
@@ -219,6 +220,41 @@ ID: #{conta['id']}
             print(f"❌ Erro ao enviar email: {e}")
             return False
     
+    def enviar_telegram_alerta(self, contas):
+        """Envia alerta de contas via Telegram Bot API"""
+        token = os.getenv('TELEGRAM_BOT_TOKEN')
+        chat_id = os.getenv('TELEGRAM_CHAT_ID')
+        if not token or not chat_id:
+            print("⚠️ TELEGRAM_BOT_TOKEN ou TELEGRAM_CHAT_ID não configurados")
+            return False
+
+        texto = self.gerar_alerta_texto(contas)
+        cabecalho = f"📅 <b>ALERTA DIÁRIO — {datetime.now().strftime('%d/%m/%Y')}</b>\n\n"
+        mensagem = cabecalho + texto
+
+        try:
+            url = f'https://api.telegram.org/bot{token}/sendMessage'
+            r = requests.post(url, json={
+                'chat_id': chat_id,
+                'text': mensagem,
+                'parse_mode': 'HTML'
+            }, timeout=10)
+            if r.ok:
+                print("✅ Alerta enviado via Telegram")
+                return True
+            else:
+                print(f"❌ Telegram respondeu: {r.status_code} — {r.text}")
+                return False
+        except Exception as e:
+            print(f"❌ Erro ao enviar Telegram: {e}")
+            return False
+
+    def enviar_alertas_diarios(self):
+        """Envia alerta por email E Telegram"""
+        contas = self.obter_contas_proximos_dias(dias=3)
+        self.enviar_email_alerta()
+        self.enviar_telegram_alerta(contas)
+
     def obter_relatorio_mensal(self):
         """Gera relatório completo do mês"""
         contas = self.db.listar_todas_contas()

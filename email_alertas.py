@@ -250,9 +250,28 @@ ID: #{conta['id']}
             return False
 
     def enviar_alertas_diarios(self):
-        """Envia alerta por email E Telegram"""
+        """Envia alerta por email E Telegram usando a mesma consulta"""
         contas = self.obter_contas_proximos_dias(dias=3)
-        self.enviar_email_alerta()
+        print(f"📊 Contas para alerta: {len(contas)}")
+
+        # Email
+        try:
+            msg = MIMEMultipart('alternative')
+            msg['Subject'] = f"📅 Contas a Pagar - {datetime.now().strftime('%d/%m/%Y')}"
+            msg['From'] = self.sender
+            msg['To'] = self.destinatario
+            msg.attach(MIMEText(self.gerar_alerta_texto(contas), 'plain', 'utf-8'))
+            msg.attach(MIMEText(self.gerar_html_alerta(contas), 'html', 'utf-8'))
+            server = smtplib.SMTP(self.smtp_server, self.smtp_port)
+            server.starttls()
+            server.login(self.sender, self.senha)
+            server.sendmail(self.sender, self.destinatario, msg.as_string())
+            server.quit()
+            print(f"✅ Email enviado para {self.destinatario}")
+        except Exception as e:
+            print(f"❌ Erro ao enviar email: {e}")
+
+        # Telegram
         self.enviar_telegram_alerta(contas)
 
     def obter_relatorio_mensal(self):

@@ -2,26 +2,21 @@
 """
 AGENTE DE CONTAS A PAGAR
 Sistema completo de gestão de contas com Gmail, Telegram e armazenamento de comprovantes
-
-Para começar:
-python main.py
 """
 
 import os
 import sys
 import logging
-from dotenv import load_dotenv
-from database import BancoDados
-from monitor_gmail import MonitorGmail
-from telegram_handler import TelegramHandler
-from scheduler import Agendador
+import time
 import threading
 from datetime import datetime
+from dotenv import load_dotenv
+from database import BancoDados
+from telegram_handler import TelegramHandler
+from scheduler import Agendador
 
-# Carrega variáveis de ambiente
 load_dotenv()
 
-# Configurar logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -32,144 +27,106 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+
 class AgenteCompleto:
     def __init__(self):
         logger.info("=" * 60)
         logger.info("🤖 INICIANDO AGENTE DE CONTAS A PAGAR")
         logger.info("=" * 60)
-        
-        # Validar configurações
-        self.validar_configuracao()
-        
-        # Inicializar componentes
+
+        self._validar_configuracao()
+
         db_file = os.getenv('DATABASE_FILE', 'contas.db')
-        os.makedirs(os.path.dirname(db_file), exist_ok=True) if os.path.dirname(db_file) else None
+        if os.path.dirname(db_file):
+            os.makedirs(os.path.dirname(db_file), exist_ok=True)
         self.db = BancoDados(db_type='sqlite', db_file=db_file)
-        logger.info("✅ Banco de dados pronto")
-        
-        self.monitor_gmail = MonitorGmail(self.db)
-        logger.info("✅ Monitor Gmail pronto")
-        
+        logger.info(f"✅ Banco de dados pronto: {db_file}")
+
+        # Gmail monitoring é opcional — falha não derruba o sistema
+        self.monitor_gmail = self._iniciar_gmail()
+
         self.telegram = TelegramHandler(self.db)
         logger.info("✅ Telegram Handler pronto")
-        
-        self.agendador = Agendador()
+
+        # Agendador usa o MESMO banco do Telegram
+        self.agendador = Agendador(self.db)
         logger.info("✅ Agendador pronto")
-    
-    def validar_configuracao(self):
-        """Valida se todas as configurações necessárias estão presentes"""
-        logger.info("Validando configuração...")
-        
-        variaveis_obrigatorias = [
+
+    def _validar_configuracao(self):
+        obrigatorias = [
             'ANTHROPIC_API_KEY',
-            'GMAIL_CREDENTIALS_FILE',
-            'GMAIL_MONITORED_ADDRESS',
-            'EMAIL_SENDER',
-            'EMAIL_SENDER_PASSWORD',
-            'EMAIL_RECIPIENT',
-            'TELEGRAM_BOT_TOKEN',
-            'TELEGRAM_CHAT_ID'
+            'EMAIL_SENDER', 'EMAIL_SENDER_PASSWORD', 'EMAIL_RECIPIENT',
+            'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID',
         ]
-        
-        faltam = []
-        for var in variaveis_obrigatorias:
-            if not os.getenv(var):
-                faltam.append(var)
-        
+        faltam = [v for v in obrigatorias if not os.getenv(v)]
         if faltam:
-            logger.error(f"❌ Variáveis faltando no .env:")
-            for var in faltam:
-                logger.error(f"   - {var}")
-            logger.error("\nCopie .env.example para .env e preencha todos os campos")
+            for v in faltam:
+                logger.error(f"❌ Variável obrigatória ausente: {v}")
             sys.exit(1)
-        
-        logger.info("✅ Todas as variáveis configuradas")
-    
-    def rodar_gmail_em_thread(self):
-        """Roda Gmail em thread separada"""
-        def monitor():
-            logger.info("📧 Thread de monitoramento Gmail iniciada")
-            try:
-                while True:
+        logger.info("✅ Configuração validada")
+
+    def _iniciar_gmail(self):
+        """Tenta iniciar o monitor de Gmail; retorna None se não conseguir."""
+        try:
+            from monitor_gmail import MonitorGmail
+            monitor = MonitorGmail(self.db)
+            logger.info("✅ Monitor Gmail pronto")
+            return monitor
+        except Exception as e:
+            logger.warning(f"⚠️ Monitor Gmail desativado: {e}")
+            logger.warning("   Configure GMAIL_TOKEN_B64 no Render para ativar.")
+            return None
+
+    def _rodar_gmail_em_thread(self):
+        if not self.monitor_gmail:
+            logger.warning("⚠️ Gmail monitoring desativado — pulando thread")
+            return
+
+        def loop():
+            logger.info("📧 Thread Gmail iniciada")
+            while True:
+                try:
                     self.monitor_gmail.monitorar_continuamente()
-                    import time
-                    time.sleep(1800)  # A cada 30 minutos
-            except Exception as e:
-                logger.error(f"❌ Erro em thread Gmail: {e}")
-        
-        thread = threading.Thread(target=monitor, daemon=True)
+                except Exception as e:
+                    logger.error(f"❌ Erro no ciclo Gmail: {e}")
+                time.sleep(1800)
+
+        thread = threading.Thread(target=loop, daemon=True)
         thread.start()
-        logger.info("✅ Monitoramento Gmail em background")
-    
-    def rodar_agendador_em_thread(self):
-        """Roda Agendador em thread separada"""
-        def agendador():
+        logger.info("✅ Monitor Gmail em background (a cada 30 min)")
+
+    def _rodar_agendador_em_thread(self):
+        def loop():
             logger.info("📅 Thread Agendador iniciada")
             try:
                 self.agendador.agendar()
             except Exception as e:
-                logger.error(f"❌ Erro em thread Agendador: {e}")
+                logger.error(f"❌ Erro no agendador: {e}", exc_info=True)
 
-        thread = threading.Thread(target=agendador, daemon=True)
+        thread = threading.Thread(target=loop, daemon=True)
         thread.start()
-        logger.info("✅ Agendador rodando em background")
+        logger.info("✅ Agendador em background")
 
     def rodar_tudo(self):
-        """Inicia todos os componentes"""
-        logger.info("\n" + "=" * 60)
         logger.info("🚀 INICIANDO TODOS OS COMPONENTES")
-        logger.info("=" * 60 + "\n")
+        self._rodar_gmail_em_thread()
+        self._rodar_agendador_em_thread()
 
-        print("\n" + "=" * 60)
-        print("🤖 AGENTE DE CONTAS A PAGAR")
-        print("=" * 60)
-        print(f"\n⏰ Iniciado em: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
-        print("\n📋 COMPONENTES ATIVOS:")
-        print("  ✅ Banco de dados (SQLite)")
-        print("  ✅ Monitor Gmail (a cada 30 min)")
-        print("  ✅ Telegram Bot (24/7)")
-        print("  ✅ Alertas diários (08:00)")
-        print("\n📞 PRÓXIMOS PASSOS:")
-        print("  1. Envie um email para seu rótulo 'ContasAPagar'")
-        print("  2. Use /ajuda no Telegram para comandos")
-        print("  3. Digite /status para verificar tudo")
-        print("\n" + "=" * 60 + "\n")
-
-        # Rodar Gmail em background
-        self.rodar_gmail_em_thread()
-
-        # Rodar Agendador em background
-        self.rodar_agendador_em_thread()
-
-        # Rodar Telegram no thread principal
-        # python-telegram-bot v20+ requer event loop do asyncio — funciona
-        # corretamente apenas no thread principal
         logger.info("💬 Iniciando Telegram Bot no thread principal...")
         try:
             self.telegram.rodar()
         except (KeyboardInterrupt, SystemExit):
-            logger.info("\n⏹️ Agente parado pelo usuário")
-            print("\n⏹️ Agente finalizado. Até logo!")
+            logger.info("⏹️ Agente parado")
             sys.exit(0)
 
+
 def main():
-    """Função principal"""
     try:
-        # Verificar se credentials.json existe
-        creds_file = os.getenv('GMAIL_CREDENTIALS_FILE', 'credentials.json')
-        if not os.path.exists(creds_file):
-            logger.warning("⚠️ credentials.json não encontrado — Gmail desativado")
-        
-        # Criar agente
-        agente = AgenteCompleto()
-        
-        # Rodar tudo
-        agente.rodar_tudo()
-    
+        AgenteCompleto().rodar_tudo()
     except Exception as e:
         logger.error(f"❌ Erro fatal: {e}", exc_info=True)
-        print(f"\n❌ Erro: {e}")
         sys.exit(1)
+
 
 if __name__ == '__main__':
     main()

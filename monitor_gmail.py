@@ -29,20 +29,24 @@ class MonitorGmail:
             with open('token.pickle', 'rb') as f:
                 creds = pickle.load(f)
 
-        if not creds or not creds.valid:
-            if creds and creds.expired and creds.refresh_token:
+        if not creds:
+            raise RuntimeError(
+                "Credenciais Gmail não encontradas. "
+                "Configure GMAIL_TOKEN_B64 no Render para ativar o monitor de email."
+            )
+
+        if not creds.valid:
+            if creds.expired and creds.refresh_token:
                 creds.refresh(Request())
-                if not token_b64:
+                # Atualiza o pickle local se não estiver usando variável de ambiente
+                if not token_b64 and os.path.exists('token.pickle'):
                     with open('token.pickle', 'wb') as f:
                         pickle.dump(creds, f)
             else:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    os.getenv('GMAIL_CREDENTIALS_FILE', 'credentials.json'),
-                    self.SCOPES
+                raise RuntimeError(
+                    "Token Gmail expirado e sem refresh token. "
+                    "Regenere o token localmente e atualize GMAIL_TOKEN_B64 no Render."
                 )
-                creds = flow.run_local_server(port=0)
-                with open('token.pickle', 'wb') as f:
-                    pickle.dump(creds, f)
 
         return discovery.build('gmail', 'v1', credentials=creds)
     

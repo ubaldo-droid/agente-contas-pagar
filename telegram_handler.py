@@ -212,35 +212,68 @@ Status: Operacional ✅
 """
         await update.message.reply_text(texto)
     
+    def _formatar_conta_salva(self, dados, conta_id: int) -> str:
+        msg = (
+            f"✅ ID #{conta_id} — {dados.get('fornecedor', '-')}\n"
+            f"   💰 R$ {float(dados.get('valor', 0)):.2f}  📅 {dados.get('vencimento', '-')}"
+            f"  💳 {dados.get('forma_pagamento', '-')}  📁 {dados.get('categoria', '-')}"
+        )
+        if dados.get('dados_pagamento'):
+            msg += f"\n   🔑 {dados.get('dados_pagamento')}"
+        return msg
+
+    async def _salvar_uma_conta(self, dados: dict) -> tuple[int | None, str]:
+        """Salva uma única conta; retorna (id, mensagem)"""
+        try:
+            conta_id = self.db.adicionar_conta(
+                vencimento=dados.get('vencimento'),
+                fornecedor=dados.get('fornecedor'),
+                valor=dados.get('valor'),
+                categoria=dados.get('categoria'),
+                forma_pagamento=dados.get('forma_pagamento'),
+                codigo_pix=dados.get('dados_pagamento'),
+                observacoes=dados.get('observacoes', '')
+            )
+            return conta_id, self._formatar_conta_salva(dados, conta_id)
+        except Exception as e:
+            return None, f"❌ Erro ao salvar {dados.get('fornecedor', '?')}: {e}"
+
     async def _salvar_conta_ou_responder(self, update: Update, dados, resposta_ia: str):
-        """Salva conta identificada no banco ou informa o usuário conforme resultado da IA"""
-        if dados and dados.get('tipo_resposta') == 'conta_identificada':
-            try:
-                conta_id = self.db.adicionar_conta(
-                    vencimento=dados.get('vencimento'),
-                    fornecedor=dados.get('fornecedor'),
-                    valor=dados.get('valor'),
-                    categoria=dados.get('categoria'),
-                    forma_pagamento=dados.get('forma_pagamento'),
-                    codigo_pix=dados.get('dados_pagamento'),
-                    observacoes=dados.get('observacoes', '')
-                )
-                msg = (
-                    f"✅ Conta registrada! ID #{conta_id}\n\n"
-                    f"👤 {dados.get('fornecedor', '-')}\n"
-                    f"💰 R$ {float(dados.get('valor', 0)):.2f}\n"
-                    f"📅 Vencimento: {dados.get('vencimento', '-')}\n"
-                    f"💳 {dados.get('forma_pagamento', '-')}\n"
-                    f"📁 {dados.get('categoria', '-')}\n"
-                )
-                if dados.get('dados_pagamento'):
-                    msg += f"🔑 {dados.get('dados_pagamento')}\n"
-                if dados.get('observacoes'):
-                    msg += f"📝 {dados.get('observacoes')}\n"
+        """Salva conta(s) identificada(s) no banco ou informa o usuário"""
+        if not dados:
+            await update.message.reply_text(
+                "🤔 Não consegui identificar uma conta nos dados informados.\n\n"
+                "Para texto, inclua fornecedor, valor, vencimento e forma de pagamento.\n"
+                "Para arquivos, envie uma foto do boleto ou o PDF."
+            )
+            return
+
+        tipo = dados.get('tipo_resposta')
+
+        if tipo == 'multiplas_contas':
+            contas = dados.get('contas', [])
+            linhas = [f"✅ {len(contas)} contas registradas:\n"]
+            erros = []
+            for c in contas:
+                if c.get('tipo_resposta') == 'conta_identificada':
+                    conta_id, msg = await self._salvar_uma_conta(c)
+                    if conta_id:
+                        linhas.append(msg)
+                    else:
+                        erros.append(msg)
+            if linhas:
+                await update.message.reply_text('\n'.join(linhas))
+            if erros:
+                await update.message.reply_text('\n'.join(erros))
+
+        elif tipo == 'conta_identificada':
+            conta_id, msg = await self._salvar_uma_conta(dados)
+            if conta_id:
+                await update.message.reply_text(f"✅ Conta registrada!\n\n{msg}")
+            else:
                 await update.message.reply_text(msg)
-            except Exception as e:
-                await update.message.reply_text(f"❌ Erro ao salvar no banco: {e}")
-        elif dados and dados.get('tipo_resposta') == 'comprovante_identificado':
+
+        elif tipo == 'comprovante_identificado':
             ext = dados.get('dados_extraidos', {})
             msg = (
                 f"🧾 Comprovante identificado:\n\n"
@@ -251,14 +284,11 @@ Status: Operacional ✅
                 f"Use /paga <id> para marcar a conta correspondente como paga."
             )
             await update.message.reply_text(msg)
+
         else:
             await update.message.reply_text(
                 "🤔 Não consegui identificar uma conta nos dados informados.\n\n"
-                "Para texto, inclua:\n"
-                "• Fornecedor/nome\n"
-                "• Valor (ex: R$ 1.500,00)\n"
-                "• Vencimento (ex: 30/05/2026)\n"
-                "• Forma de pagamento (PIX, boleto, etc.)\n\n"
+                "Para texto, inclua fornecedor, valor, vencimento e forma de pagamento.\n"
                 "Para arquivos, envie uma foto do boleto ou o PDF."
             )
 

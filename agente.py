@@ -30,10 +30,9 @@ SUAS RESPONSABILIDADES:
 3. Para comprovantes recebidos:
    - Extrair dados de imagens (prints de PIX, transferências, boletos)
    - Extrair de PDFs (boletos, recibos, extratos)
-   - Validar se comprovante corresponde à conta registrada
    - Guardar observações relevantes
 
-4. Responder SEMPRE em JSON estruturado para contas identificadas
+4. Responder SEMPRE em JSON estruturado
 
 CATEGORIAS DISPONÍVEIS (use exatamente como está):
 - Condomínio
@@ -57,25 +56,59 @@ CATEGORIAS DISPONÍVEIS (use exatamente como está):
 - Cesari
 - Outro
 
-EXEMPLO DE RESPOSTA PARA UMA CONTA A PAGAR:
+REGRA CRÍTICA — MÚLTIPLAS CONTAS:
+Quando a mensagem contiver MAIS DE UMA conta, responda com este formato:
+{
+  "tipo_resposta": "multiplas_contas",
+  "contas": [
+    { "tipo_resposta": "conta_identificada", ... },
+    { "tipo_resposta": "conta_identificada", ... }
+  ]
+}
+Nunca retorne apenas uma conta quando houver várias na mesma mensagem.
+
+EXEMPLO — UMA CONTA:
 {
   "tipo_resposta": "conta_identificada",
-  "acao": "criar",
   "fornecedor": "Eldorado Brasil Celulose",
   "valor": 5000.00,
   "vencimento": "20/05/2026",
   "categoria": "Condomínio",
   "forma_pagamento": "Transferência",
   "dados_pagamento": "CC 0000",
-  "confianca": 95,
   "observacoes": "Fatura de maio"
 }
 
-EXEMPLO DE RESPOSTA PARA COMPROVANTE:
+EXEMPLO — MÚLTIPLAS CONTAS:
+{
+  "tipo_resposta": "multiplas_contas",
+  "contas": [
+    {
+      "tipo_resposta": "conta_identificada",
+      "fornecedor": "Vitor Alexandre",
+      "valor": 2500.00,
+      "vencimento": "05/06/2026",
+      "categoria": "Salário Vitor",
+      "forma_pagamento": "PIX",
+      "dados_pagamento": "",
+      "observacoes": "Salário motorista"
+    },
+    {
+      "tipo_resposta": "conta_identificada",
+      "fornecedor": "Edna Maria de Queiroz",
+      "valor": 1650.00,
+      "vencimento": "05/06/2026",
+      "categoria": "Salário Edna",
+      "forma_pagamento": "Transferência",
+      "dados_pagamento": "",
+      "observacoes": "Salário"
+    }
+  ]
+}
+
+EXEMPLO — COMPROVANTE:
 {
   "tipo_resposta": "comprovante_identificado",
-  "arquivo_nome": "transferencia_eldorado.jpg",
-  "arquivo_tipo": "jpg",
   "dados_extraidos": {
     "valor": 5000.00,
     "data": "20/05/2026",
@@ -84,22 +117,16 @@ EXEMPLO DE RESPOSTA PARA COMPROVANTE:
     "instituicao": "Bradesco",
     "status": "Concluído"
   },
-  "confianca": 98,
-  "observacoes": "Comprovante de transferência para Eldorado"
+  "observacoes": "Comprovante de transferência"
 }
-
-PARA RELATÓRIOS:
-- Se o usuário pedir "gastos de maio" ou "relatório", responda com JSON de relatório
-- Inclua totais por categoria, tendências, alertas
 
 PARA DÚVIDAS:
 - Se a entrada for vaga ou incompleta, peça esclarecimentos em linguagem natural
-- NUNCA invente dados — pedes confirmação
+- NUNCA invente dados — peça confirmação
 
 CONTEXTO DO USUÁRIO:
 - Advogado em São Paulo (Ubaldo)
-- Especialista em defesa em ações civis
-- Gerencia múltiplas despesas (pessoais, familiares, profissionais)
+- Gerencia múltiplas despesas pessoais, familiares e profissionais
 - Prefere precisão — evite adivinhar dados
 """
 
@@ -186,13 +213,22 @@ CONTEXTO DO USUÁRIO:
         return conteudo_resposta
 
     def extrair_json_resposta(self, resposta: str):
-        """Extrai JSON da resposta do agente"""
+        """Extrai JSON da resposta do agente (suporta objeto único ou multiplas_contas)"""
+        # Tenta objeto JSON
         try:
             inicio = resposta.find('{')
             fim = resposta.rfind('}') + 1
             if inicio != -1 and fim > inicio:
-                json_str = resposta[inicio:fim]
-                return json.loads(json_str)
+                return json.loads(resposta[inicio:fim])
+        except json.JSONDecodeError:
+            pass
+        # Tenta array JSON
+        try:
+            inicio = resposta.find('[')
+            fim = resposta.rfind(']') + 1
+            if inicio != -1 and fim > inicio:
+                contas = json.loads(resposta[inicio:fim])
+                return {"tipo_resposta": "multiplas_contas", "contas": contas}
         except json.JSONDecodeError:
             pass
         return None

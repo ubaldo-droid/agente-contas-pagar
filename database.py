@@ -150,6 +150,13 @@ class BancoDados:
                 pass
         return resultado
     
+    def buscar_contas_por_valor(self, valor: float, tolerancia: float = 0.01):
+        """Busca contas pendentes que correspondam ao valor do comprovante"""
+        session = self.Session()
+        contas = session.query(Conta).filter(Conta.status == 'Pendente').all()
+        session.close()
+        return [c for c in contas if abs(c.valor - valor) <= tolerancia]
+
     def obter_contas_por_categoria(self, categoria):
         session = self.Session()
         contas = session.query(Conta).filter(

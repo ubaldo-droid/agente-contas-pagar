@@ -115,10 +115,12 @@ EXEMPLO — COMPROVANTE:
     "hora": "14:30",
     "tipo_transacao": "Transferência",
     "instituicao": "Bradesco",
-    "status": "Concluído"
+    "status": "Concluído",
+    "beneficiario": "Eldorado Brasil Celulose"
   },
   "observacoes": "Comprovante de transferência"
 }
+IMPORTANTE: sempre extraia o campo "beneficiario" do comprovante (nome do destinatário/favorecido).
 
 PARA DÚVIDAS:
 - Se a entrada for vaga ou incompleta, peça esclarecimentos em linguagem natural

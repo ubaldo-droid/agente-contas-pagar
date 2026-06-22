@@ -274,16 +274,7 @@ Status: Operacional ✅
                 await update.message.reply_text(msg)
 
         elif tipo == 'comprovante_identificado':
-            ext = dados.get('dados_extraidos', {})
-            msg = (
-                f"🧾 Comprovante identificado:\n\n"
-                f"💰 Valor: R$ {ext.get('valor', '-')}\n"
-                f"📅 Data: {ext.get('data', '-')}\n"
-                f"🏦 {ext.get('tipo_transacao', '-')} — {ext.get('instituicao', '-')}\n"
-                f"✅ Status: {ext.get('status', '-')}\n\n"
-                f"Use /paga <id> para marcar a conta correspondente como paga."
-            )
-            await update.message.reply_text(msg)
+            await self._processar_comprovante(update, dados)
 
         else:
             await update.message.reply_text(
@@ -291,6 +282,68 @@ Status: Operacional ✅
                 "Para texto, inclua fornecedor, valor, vencimento e forma de pagamento.\n"
                 "Para arquivos, envie uma foto do boleto ou o PDF."
             )
+
+    async def _processar_comprovante(self, update: Update, dados: dict):
+        """Tenta identificar a conta paga e marcá-la automaticamente"""
+        ext = dados.get('dados_extraidos', {})
+        valor_raw = ext.get('valor')
+        data_pagamento = ext.get('data') or datetime.now().strftime('%d/%m/%Y')
+        beneficiario = (ext.get('beneficiario') or '').strip()
+        tipo_transacao = ext.get('tipo_transacao', '-')
+        instituicao = ext.get('instituicao', '-')
+
+        cabecalho = (
+            f"🧾 Comprovante identificado:\n"
+            f"💰 R$ {float(valor_raw):.2f}  📅 {data_pagamento}\n"
+            f"🏦 {tipo_transacao} — {instituicao}"
+            + (f"\n👤 {beneficiario}" if beneficiario else "")
+            + "\n"
+        )
+
+        if not valor_raw:
+            await update.message.reply_text(
+                cabecalho + "\n⚠️ Não foi possível extrair o valor. Use /paga <id> manualmente."
+            )
+            return
+
+        candidatos = self.db.buscar_contas_por_valor(float(valor_raw))
+
+        if not candidatos:
+            await update.message.reply_text(
+                cabecalho +
+                "\n⚠️ Nenhuma conta pendente com esse valor encontrada no banco.\n"
+                "Use /paga <id> para marcar manualmente se necessário."
+            )
+            return
+
+        # Tenta refinar por nome do beneficiário
+        if len(candidatos) > 1 and beneficiario:
+            nome_lower = beneficiario.lower()
+            filtrados = [
+                c for c in candidatos
+                if nome_lower in c.fornecedor.lower() or c.fornecedor.lower() in nome_lower
+            ]
+            if filtrados:
+                candidatos = filtrados
+
+        if len(candidatos) == 1:
+            conta = candidatos[0]
+            self.db.marcar_como_paga(conta.id, data_pagamento)
+            await update.message.reply_text(
+                cabecalho +
+                f"\n✅ Conta marcada como PAGA!\n"
+                f"ID #{conta.id} | {conta.fornecedor}\n"
+                f"R$ {conta.valor:.2f} | Pago em {data_pagamento}"
+            )
+        else:
+            linhas = [
+                cabecalho,
+                f"⚠️ {len(candidatos)} contas pendentes com esse valor. Confirme qual foi paga:\n",
+            ]
+            for c in candidatos:
+                linhas.append(f"  ID #{c.id} | {c.fornecedor} | venc. {c.vencimento}")
+            linhas.append("\nResponda com /paga <id> para registrar.")
+            await update.message.reply_text('\n'.join(linhas))
 
     async def mensagem_texto(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Processa mensagens de texto com agente IA e salva no banco"""

@@ -122,6 +122,44 @@ EXEMPLO — COMPROVANTE:
 }
 IMPORTANTE: sempre extraia o campo "beneficiario" do comprovante (nome do destinatário/favorecido).
 
+REGRA CRÍTICA — CONTAS RECORRENTES:
+Quando o usuário mencionar pagamentos que se repetem em dias fixos do mês (ex: "todo dia 5 e 20", "mensalmente", "por X meses"), responda com:
+{
+  "tipo_resposta": "conta_recorrente",
+  "fornecedor": "Marinheiro",
+  "valor": 400.00,
+  "categoria": "Marinheiro",
+  "forma_pagamento": "PIX",
+  "dados_pagamento": "40721576869",
+  "recorrencia": {
+    "dias_do_mes": [5, 20],
+    "data_inicio": "20/07/2026",
+    "duracao_meses": 12
+  },
+  "observacoes": ""
+}
+O campo "data_inicio" indica a partir de qual data os lançamentos devem começar (DD/MM/YYYY).
+O campo "dias_do_mes" lista os dias do mês em que a conta vence.
+O campo "duracao_meses" indica por quantos meses devem ser gerados os lançamentos.
+
+EXEMPLO — CONTA RECORRENTE:
+Usuário: "Agendar Marinheiro para o dia 5 e para o dia 20 de cada mês, começando em 20/07/2026, por 12 meses, no valor de R$ 400 cada pagamento, através de pix 40721576869"
+Resposta:
+{
+  "tipo_resposta": "conta_recorrente",
+  "fornecedor": "Marinheiro",
+  "valor": 400.00,
+  "categoria": "Marinheiro",
+  "forma_pagamento": "PIX",
+  "dados_pagamento": "40721576869",
+  "recorrencia": {
+    "dias_do_mes": [5, 20],
+    "data_inicio": "20/07/2026",
+    "duracao_meses": 12
+  },
+  "observacoes": "Pagamento recorrente mensal"
+}
+
 PARA DÚVIDAS:
 - Se a entrada for vaga ou incompleta, peça esclarecimentos em linguagem natural
 - NUNCA invente dados — peça confirmação

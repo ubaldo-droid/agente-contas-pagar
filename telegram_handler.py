@@ -5,8 +5,44 @@ from database import BancoDados
 from agente import AgenteContasPagar
 from email_alertas import GeradorAlertas
 from anthropic import AuthenticationError
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
+import calendar
 import json
+
+
+def _gerar_datas_recorrencia(dias_do_mes: list, data_inicio_str: str, duracao_meses: int) -> list:
+    """Gera lista de datas (DD/MM/YYYY) para contas recorrentes.
+
+    Para cada mês dentro do período, gera uma data para cada dia listado em
+    dias_do_mes. Datas anteriores a data_inicio e datas inválidas (ex: 30/02)
+    são silenciosamente descartadas.
+    """
+    try:
+        data_inicio = datetime.strptime(data_inicio_str, '%d/%m/%Y').date()
+    except (ValueError, TypeError):
+        data_inicio = date.today()
+
+    datas = []
+    mes_atual = date(data_inicio.year, data_inicio.month, 1)
+
+    for _ in range(duracao_meses):
+        for dia in dias_do_mes:
+            try:
+                ultimo_dia = calendar.monthrange(mes_atual.year, mes_atual.month)[1]
+                if dia > ultimo_dia:
+                    continue
+                d = date(mes_atual.year, mes_atual.month, dia)
+                if d >= data_inicio:
+                    datas.append(d.strftime('%d/%m/%Y'))
+            except (ValueError, TypeError):
+                continue
+        # Avança para o próximo mês
+        if mes_atual.month == 12:
+            mes_atual = date(mes_atual.year + 1, 1, 1)
+        else:
+            mes_atual = date(mes_atual.year, mes_atual.month + 1, 1)
+
+    return datas
 
 class TelegramHandler:
     def __init__(self, database):
@@ -273,6 +309,9 @@ Status: Operacional ✅
             else:
                 await update.message.reply_text(msg)
 
+        elif tipo == 'conta_recorrente':
+            await self._processar_conta_recorrente(update, dados)
+
         elif tipo == 'comprovante_identificado':
             await self._processar_comprovante(update, dados)
 
@@ -282,6 +321,68 @@ Status: Operacional ✅
                 "Para texto, inclua fornecedor, valor, vencimento e forma de pagamento.\n"
                 "Para arquivos, envie uma foto do boleto ou o PDF."
             )
+
+    async def _processar_conta_recorrente(self, update: Update, dados: dict):
+        """Gera e salva todas as ocorrências de uma conta recorrente"""
+        rec = dados.get('recorrencia', {})
+        dias_do_mes = rec.get('dias_do_mes', [])
+        data_inicio = rec.get('data_inicio', '')
+        duracao_meses = int(rec.get('duracao_meses', 1))
+
+        if not dias_do_mes or not data_inicio:
+            await update.message.reply_text(
+                "❌ Dados de recorrência incompletos. Informe os dias do mês, data de início e duração."
+            )
+            return
+
+        datas = _gerar_datas_recorrencia(dias_do_mes, data_inicio, duracao_meses)
+        if not datas:
+            await update.message.reply_text(
+                "❌ Nenhuma data gerada para os parâmetros informados. Verifique os dias e o período."
+            )
+            return
+
+        await update.message.reply_text(
+            f"⏳ Gerando {len(datas)} lançamentos para {dados.get('fornecedor', '-')}..."
+        )
+
+        ids_salvos = []
+        erros = []
+        for vencimento in datas:
+            conta_dados = {
+                'vencimento': vencimento,
+                'fornecedor': dados.get('fornecedor'),
+                'valor': dados.get('valor'),
+                'categoria': dados.get('categoria'),
+                'forma_pagamento': dados.get('forma_pagamento'),
+                'dados_pagamento': dados.get('dados_pagamento'),
+                'observacoes': dados.get('observacoes', ''),
+            }
+            conta_id, msg = await self._salvar_uma_conta(conta_dados)
+            if conta_id:
+                ids_salvos.append((conta_id, vencimento))
+            else:
+                erros.append(msg)
+
+        linhas = [
+            f"✅ {len(ids_salvos)} lançamentos criados para {dados.get('fornecedor', '-')}!\n",
+            f"💰 R$ {float(dados.get('valor', 0)):.2f} cada  |  {dados.get('forma_pagamento', '-')}",
+        ]
+        if dados.get('dados_pagamento'):
+            linhas.append(f"🔑 {dados.get('dados_pagamento')}")
+        linhas.append(f"\n📅 Datas geradas ({len(ids_salvos)}):")
+        for cid, venc in ids_salvos:
+            linhas.append(f"  ID #{cid} — {venc}")
+        if erros:
+            linhas.append(f"\n⚠️ {len(erros)} erro(s):\n" + "\n".join(erros))
+
+        # Telegram limita mensagens a ~4096 chars; divide se necessário
+        texto = "\n".join(linhas)
+        if len(texto) <= 4000:
+            await update.message.reply_text(texto)
+        else:
+            resumo = "\n".join(linhas[:6]) + f"\n...e mais {len(ids_salvos) - 3} datas."
+            await update.message.reply_text(resumo)
 
     async def _processar_comprovante(self, update: Update, dados: dict):
         """Tenta identificar a conta paga e marcá-la automaticamente"""

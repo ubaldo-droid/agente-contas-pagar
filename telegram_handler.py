@@ -417,7 +417,7 @@ Status: Operacional ✅
             )
             return
 
-        # Tenta refinar por nome do beneficiário
+        # Refina por nome do beneficiário
         if len(candidatos) > 1 and beneficiario:
             nome_lower = beneficiario.lower()
             filtrados = [
@@ -427,13 +427,30 @@ Status: Operacional ✅
             if filtrados:
                 candidatos = filtrados
 
+        # Desempata pela data de vencimento mais próxima da data de pagamento
+        if len(candidatos) > 1:
+            try:
+                data_pag_date = datetime.strptime(data_pagamento, '%d/%m/%Y').date()
+
+                def _dist_venc(conta):
+                    try:
+                        return abs((datetime.strptime(conta.vencimento, '%d/%m/%Y').date() - data_pag_date).days)
+                    except Exception:
+                        return float('inf')
+
+                candidatos = sorted(candidatos, key=_dist_venc)
+                # Seleciona o mais próximo; mantém lista de 1 para seguir fluxo normal
+                candidatos = [candidatos[0]]
+            except Exception:
+                pass
+
         if len(candidatos) == 1:
             conta = candidatos[0]
             self.db.marcar_como_paga(conta.id, data_pagamento)
             await update.message.reply_text(
                 cabecalho +
                 f"\n✅ Conta marcada como PAGA!\n"
-                f"ID #{conta.id} | {conta.fornecedor}\n"
+                f"ID #{conta.id} | {conta.fornecedor} | venc. {conta.vencimento}\n"
                 f"R$ {conta.valor:.2f} | Pago em {data_pagamento}"
             )
         else:

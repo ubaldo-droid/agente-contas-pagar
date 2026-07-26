@@ -53,16 +53,18 @@ class AgenteCompleto:
         logger.info("✅ Agendador pronto")
 
     def _validar_configuracao(self):
-        obrigatorias = [
-            'ANTHROPIC_API_KEY',
-            'EMAIL_SENDER', 'EMAIL_SENDER_PASSWORD', 'EMAIL_RECIPIENT',
-            'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID',
-        ]
+        # Apenas as variáveis sem as quais o Telegram bot não pode funcionar
+        obrigatorias = ['ANTHROPIC_API_KEY', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID']
         faltam = [v for v in obrigatorias if not os.getenv(v)]
         if faltam:
             for v in faltam:
                 logger.error(f"❌ Variável obrigatória ausente: {v}")
             sys.exit(1)
+        # Avisar sobre vars opcionais ausentes sem encerrar
+        opcionais = ['EMAIL_SENDER', 'EMAIL_SENDER_PASSWORD', 'EMAIL_RECIPIENT']
+        for v in opcionais:
+            if not os.getenv(v):
+                logger.warning(f"⚠️ Variável opcional ausente (alertas por email desativados): {v}")
         logger.info("✅ Configuração validada")
 
     def _iniciar_gmail(self):

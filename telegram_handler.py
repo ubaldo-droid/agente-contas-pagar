@@ -277,11 +277,18 @@ Status: Operacional ✅
     async def _salvar_conta_ou_responder(self, update: Update, dados, resposta_ia: str):
         """Salva conta(s) identificada(s) no banco ou informa o usuário"""
         if not dados:
-            await update.message.reply_text(
-                "🤔 Não consegui identificar uma conta nos dados informados.\n\n"
-                "Para texto, inclua fornecedor, valor, vencimento e forma de pagamento.\n"
-                "Para arquivos, envie uma foto do boleto ou o PDF."
-            )
+            # Se a IA respondeu algo em texto (não JSON), mostra ao usuário
+            if resposta_ia and len(resposta_ia.strip()) > 10:
+                await update.message.reply_text(
+                    "🤔 Não consegui estruturar os dados em JSON. Resposta da IA:\n\n"
+                    + resposta_ia[:1000]
+                )
+            else:
+                await update.message.reply_text(
+                    "🤔 Não consegui identificar uma conta nos dados informados.\n\n"
+                    "Para texto, inclua fornecedor, valor, vencimento e forma de pagamento.\n"
+                    "Para arquivos, envie uma foto do boleto ou o PDF."
+                )
             return
 
         tipo = dados.get('tipo_resposta')
@@ -393,6 +400,16 @@ Status: Operacional ✅
         tipo_transacao = ext.get('tipo_transacao', '-')
         instituicao = ext.get('instituicao', '-')
 
+        # Verificar valor antes de usá-lo na formatação
+        if not valor_raw:
+            await update.message.reply_text(
+                f"🧾 Comprovante identificado.\n"
+                f"📅 {data_pagamento} | 🏦 {tipo_transacao} — {instituicao}"
+                + (f" | 👤 {beneficiario}" if beneficiario else "")
+                + "\n\n⚠️ Não foi possível extrair o valor. Use /paga <id> manualmente."
+            )
+            return
+
         cabecalho = (
             f"🧾 Comprovante identificado:\n"
             f"💰 R$ {float(valor_raw):.2f}  📅 {data_pagamento}\n"
@@ -400,12 +417,6 @@ Status: Operacional ✅
             + (f"\n👤 {beneficiario}" if beneficiario else "")
             + "\n"
         )
-
-        if not valor_raw:
-            await update.message.reply_text(
-                cabecalho + "\n⚠️ Não foi possível extrair o valor. Use /paga <id> manualmente."
-            )
-            return
 
         candidatos = self.db.buscar_contas_por_valor(float(valor_raw))
 
@@ -500,6 +511,18 @@ Status: Operacional ✅
         mime_type = doc.mime_type or 'application/octet-stream'
         nome = doc.file_name or 'arquivo'
         legenda = update.message.caption or ''
+
+        # Normaliza mime type: Telegram às vezes reporta PDFs como octet-stream
+        nome_lower = nome.lower()
+        if mime_type in ('application/octet-stream', '') or not mime_type:
+            if nome_lower.endswith('.pdf'):
+                mime_type = 'application/pdf'
+            elif nome_lower.endswith(('.jpg', '.jpeg')):
+                mime_type = 'image/jpeg'
+            elif nome_lower.endswith('.png'):
+                mime_type = 'image/png'
+            elif nome_lower.endswith('.webp'):
+                mime_type = 'image/webp'
 
         tipos_suportados = {'application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
         if mime_type not in tipos_suportados:

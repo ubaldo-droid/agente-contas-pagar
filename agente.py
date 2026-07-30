@@ -219,6 +219,8 @@ CONTEXTO DO USUÁRIO:
                     })
             except ImportError:
                 raise ValueError("Dependência pdf2image não disponível. Verifique se poppler-utils está instalado.")
+            except Exception as e:
+                raise ValueError(f"Erro ao converter PDF: {e}")
         elif media_type in tipos_imagem:
             conteudo.append({
                 "type": "image",
@@ -243,7 +245,7 @@ CONTEXTO DO USUÁRIO:
 
         resposta = self.cliente.messages.create(
             model="claude-sonnet-4-6",
-            max_tokens=2000,
+            max_tokens=4096,
             system=self.sistema_prompt,
             messages=[{"role": "user", "content": conteudo}]
         )

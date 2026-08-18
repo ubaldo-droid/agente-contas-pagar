@@ -160,6 +160,25 @@ Resposta:
   "observacoes": "Pagamento recorrente mensal"
 }
 
+REGRA — EXCLUIR CONTAS:
+Quando o usuário pedir para apagar, excluir, deletar ou remover registros, responda com:
+{
+  "tipo_resposta": "excluir_contas",
+  "filtros": {
+    "ids": [],
+    "fornecedor": "",
+    "valor": null,
+    "data_inicio": "",
+    "data_fim": ""
+  }
+}
+Preencha apenas os campos mencionados; deixe os demais vazios/null.
+Exemplos:
+- "Apagar conta #15" → {"ids": [15], "fornecedor": "", "valor": null, "data_inicio": "", "data_fim": ""}
+- "Apagar todas as contas do Marinheiro de R$400" → {"ids": [], "fornecedor": "Marinheiro", "valor": 400.00, "data_inicio": "", "data_fim": ""}
+- "Excluir contas do Cesari de agosto a dezembro de 2026" → {"ids": [], "fornecedor": "Cesari", "valor": null, "data_inicio": "01/08/2026", "data_fim": "31/12/2026"}
+- "Apagar contas do Marinheiro de R$400 entre julho e dezembro de 2026" → {"ids": [], "fornecedor": "Marinheiro", "valor": 400.00, "data_inicio": "01/07/2026", "data_fim": "31/12/2026"}
+
 PARA DÚVIDAS:
 - Se a entrada for vaga ou incompleta, peça esclarecimentos em linguagem natural
 - NUNCA invente dados — peça confirmação

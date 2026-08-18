@@ -316,6 +316,9 @@ Status: Operacional ✅
             else:
                 await update.message.reply_text(msg)
 
+        elif tipo == 'excluir_contas':
+            await self._processar_exclusao(update, dados)
+
         elif tipo == 'conta_recorrente':
             await self._processar_conta_recorrente(update, dados)
 
@@ -328,6 +331,97 @@ Status: Operacional ✅
                 "Para texto, inclua fornecedor, valor, vencimento e forma de pagamento.\n"
                 "Para arquivos, envie uma foto do boleto ou o PDF."
             )
+
+    async def _processar_exclusao(self, update: Update, dados: dict):
+        """Busca contas pelos filtros extraídos e apresenta lista para confirmação"""
+        filtros = dados.get('filtros', {})
+        ids = [int(i) for i in filtros.get('ids') or []]
+        fornecedor = filtros.get('fornecedor') or None
+        valor_raw = filtros.get('valor')
+        valor = float(valor_raw) if valor_raw is not None else None
+        data_inicio = filtros.get('data_inicio') or None
+        data_fim = filtros.get('data_fim') or None
+
+        if not ids and not fornecedor and valor is None and not data_inicio and not data_fim:
+            await update.message.reply_text(
+                "❌ Não consegui identificar os critérios de exclusão.\n"
+                "Informe ao menos um: ID, beneficiário, valor ou período de datas."
+            )
+            return
+
+        contas = self.db.buscar_contas_por_filtros(
+            fornecedor=fornecedor,
+            valor=valor,
+            data_inicio=data_inicio,
+            data_fim=data_fim,
+            ids=ids if ids else None,
+        )
+
+        if not contas:
+            await update.message.reply_text("🔍 Nenhuma conta encontrada com esses critérios.")
+            return
+
+        ids_encontrados = [c.id for c in contas]
+        ids_str = ','.join(str(i) for i in ids_encontrados)
+
+        linhas = [f"⚠️ {len(contas)} conta(s) serão APAGADAS se confirmar:\n"]
+        for c in contas[:20]:
+            linhas.append(f"  ID #{c.id} | {c.vencimento} | {c.fornecedor} | R$ {c.valor:.2f} | {c.status}")
+        if len(contas) > 20:
+            linhas.append(f"  ... e mais {len(contas) - 20} registro(s)")
+
+        if len(contas) == 1:
+            linhas.append(f"\nPara confirmar: /excluir {ids_encontrados[0]}")
+        else:
+            linhas.append(f"\nPara confirmar: /excluir_lote {ids_str}")
+
+        await update.message.reply_text('\n'.join(linhas))
+
+    async def cmd_excluir(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Exclui uma conta pelo ID: /excluir <id>"""
+        if not context.args:
+            await update.message.reply_text("Uso: /excluir <id_da_conta>")
+            return
+        try:
+            conta_id = int(context.args[0])
+        except ValueError:
+            await update.message.reply_text("❌ ID inválido. Use /excluir <número>")
+            return
+
+        # Busca para mostrar o que será deletado
+        contas = self.db.buscar_contas_por_filtros(ids=[conta_id])
+        if not contas:
+            await update.message.reply_text(f"❌ Conta #{conta_id} não encontrada.")
+            return
+
+        c = contas[0]
+        removido = self.db.deletar_conta(conta_id)
+        if removido:
+            await update.message.reply_text(
+                f"🗑️ Conta removida:\n"
+                f"ID #{c.id} | {c.vencimento} | {c.fornecedor} | R$ {c.valor:.2f}"
+            )
+        else:
+            await update.message.reply_text(f"❌ Não foi possível remover #{conta_id}.")
+
+    async def cmd_excluir_lote(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Exclui múltiplas contas por IDs: /excluir_lote <id1,id2,...>"""
+        if not context.args:
+            await update.message.reply_text("Uso: /excluir_lote <id1,id2,...>")
+            return
+        try:
+            raw = ' '.join(context.args).replace(' ', '')
+            ids = [int(x) for x in raw.split(',') if x.strip()]
+        except ValueError:
+            await update.message.reply_text("❌ IDs inválidos. Use: /excluir_lote 5,10,15")
+            return
+
+        if not ids:
+            await update.message.reply_text("❌ Nenhum ID informado.")
+            return
+
+        count = self.db.deletar_contas_por_ids(ids)
+        await update.message.reply_text(f"🗑️ {count} conta(s) removida(s) com sucesso.")
 
     async def _processar_conta_recorrente(self, update: Update, dados: dict):
         """Gera e salva todas as ocorrências de uma conta recorrente"""
@@ -579,6 +673,8 @@ Status: Operacional ✅
         self.application.add_handler(CommandHandler("alerta", self.alerta))
         self.application.add_handler(CommandHandler("ajuda", self.ajuda))
         self.application.add_handler(CommandHandler("status", self.status))
+        self.application.add_handler(CommandHandler("excluir", self.cmd_excluir))
+        self.application.add_handler(CommandHandler("excluir_lote", self.cmd_excluir_lote))
         
         # Handlers de mensagens
         self.application.add_handler(MessageHandler(filters.PHOTO, self.processar_foto))

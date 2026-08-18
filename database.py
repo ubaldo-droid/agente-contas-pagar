@@ -188,6 +188,58 @@ class BancoDados:
         session.close()
         return contas
 
+    def buscar_contas_por_filtros(self, fornecedor=None, valor=None, data_inicio=None, data_fim=None, ids=None):
+        """Busca contas aplicando filtros combinados (todos opcionais)"""
+        session = self.Session()
+        query = session.query(Conta)
+        if ids:
+            query = query.filter(Conta.id.in_(ids))
+        if fornecedor:
+            query = query.filter(Conta.fornecedor.ilike(f'%{fornecedor}%'))
+        if valor is not None:
+            query = query.filter(Conta.valor.between(valor - 0.01, valor + 0.01))
+        contas = query.all()
+        session.close()
+        # Filtragem por data feita em Python (campo armazenado como string DD/MM/YYYY)
+        if data_inicio or data_fim:
+            resultado = []
+            for c in contas:
+                try:
+                    venc = datetime.strptime(c.vencimento, '%d/%m/%Y').date()
+                    if data_inicio:
+                        if venc < datetime.strptime(data_inicio, '%d/%m/%Y').date():
+                            continue
+                    if data_fim:
+                        if venc > datetime.strptime(data_fim, '%d/%m/%Y').date():
+                            continue
+                    resultado.append(c)
+                except Exception:
+                    pass
+            return resultado
+        return contas
+
+    def deletar_conta(self, conta_id: int) -> bool:
+        """Remove um registro pelo ID; retorna True se encontrado e deletado"""
+        session = self.Session()
+        conta = session.query(Conta).filter_by(id=conta_id).first()
+        if conta:
+            session.delete(conta)
+            session.commit()
+            session.close()
+            return True
+        session.close()
+        return False
+
+    def deletar_contas_por_ids(self, ids: list) -> int:
+        """Remove registros pelos IDs; retorna quantidade removida"""
+        if not ids:
+            return 0
+        session = self.Session()
+        count = session.query(Conta).filter(Conta.id.in_(ids)).delete(synchronize_session=False)
+        session.commit()
+        session.close()
+        return count
+
 if __name__ == '__main__':
     db = BancoDados(db_type='sqlite', db_file='contas.db')
     print("✅ Banco de dados pronto para usar!")
